@@ -2,5 +2,5 @@
 ```
 helm repo add https://open-telemetry.github.io/opentelemetry-helm-charts
 helm repo add
-helm upgrade --install otel otel/open-telemetry
+helm upgrade --install otel otel/open-telemetry -f values-otel.yaml
 ```
