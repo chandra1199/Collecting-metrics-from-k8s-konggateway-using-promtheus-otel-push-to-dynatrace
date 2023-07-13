@@ -1,0 +1,113 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-agent-conf
+  labels:
+    app: opentelemetry
+    component: otel-agent-conf
+data:
+  otel-agent-config: |
+    receivers:
+      prometheus:
+        config:
+          scrape_configs:
+          - job_name: 'otel-collector'
+            scrape_interval: 10s
+            static_configs:
+            - targets: ['0.0.0.0:8888']
+          - job_name: 'otel-collector1'
+            scrape_interval: 10s
+            static_configs:
+            - targets: ['localhost:9090']  
+          - job_name: 'otel-collector3'
+            scrape_interval: 10s
+            static_configs:
+            - targets: ['192.168.1.226:6443']  
+        #   - job_name: 'kubernetes-service-endpoints'
+        #     honor_labels: true
+
+            kubernetes_sd_configs:
+            - role: endpoints
+
+            relabel_configs:
+            - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape]
+              action: keep
+              regex: true
+            - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scrape_slow]
+              action: drop
+              regex: true
+            - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_scheme]
+              action: replace
+              target_label: __scheme__
+              regex: (https?)
+            - source_labels: [__meta_kubernetes_service_annotation_prometheus_io_path]
+              action: replace
+              target_label: __metrics_path__
+              regex: (.+)
+            - source_labels: [__address__, __meta_kubernetes_service_annotation_prometheus_io_port]
+              action: replace
+              target_label: __address__
+              regex: (.+?)(?::\d+)?;(\d+)
+              replacement: $1:$2
+            - action: labelmap
+              regex: __meta_kubernetes_service_annotation_prometheus_io_param_(.+)
+              replacement: __param_$1
+            - action: labelmap
+              regex: __meta_kubernetes_service_label_(.+)
+            - source_labels: [__meta_kubernetes_namespace]
+              action: replace
+              target_label: namespace
+            - source_labels: [__meta_kubernetes_service_name]
+              action: replace
+              target_label: service
+            - source_labels: [__meta_kubernetes_pod_node_name]
+              action: replace
+              target_label: node  
+          - job_name: k8s
+        # Scraping configuration for Kubernetes
+            kubernetes_sd_configs:
+            - role: pod
+            relabel_configs:
+            - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+              regex: "true"
+              action: keep
+          # List of metric relabel configurations.
+            metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: "(request_duration_seconds.*|response_duration_seconds.*)"
+              action: keep
+  
+      otlp:
+        protocols:
+          grpc:
+            endpoint: ${env:MY_POD_IP}:4317
+          http:
+            endpoint: ${env:MY_POD_IP}:4318
+    exporters:
+      otlphttp:
+        endpoint: "https://rvx04306.live.dynatrace.com/api/v2/otlp/"
+        headers:
+          Authorization: "Api-Token dt0c01.EKAAQXB3GWUSSZI43QWS7JJL.R6ZDCPPOLXHHUTVDYECB3V2EMQANLHYAAI7IN2FMJUK7KUOZ6CHTEMKLAWTEYCQO"
+        compression: none 
+      dynatrace:
+        endpoint: "https://rvx04306.live.dynatrace.com/api/v2/metrics/ingest"
+        api_token: "dt0c01.EKAAQXB3GWUSSZI43QWS7JJL.R6ZDCPPOLXHHUTVDYECB3V2EMQANLHYAAI7IN2FMJUK7KUOZ6CHTEMKLAWTEYCQO"  
+    processors:
+      batch:
+      memory_limiter:
+        # 80% of maximum memory up to 2G
+        limit_mib: 400
+        # 25% of limit up to 2G
+        spike_limit_mib: 100
+        check_interval: 5s
+      cumulativetodelta:
+    service:
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlphttp]
+        metrics:
+          receivers: [prometheus]
+          processors: [cumulativetodelta]
+          exporters: [dynatrace]
